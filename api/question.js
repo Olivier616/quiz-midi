@@ -1,5 +1,4 @@
 export default async function handler(req, res) {
-  // CORS
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
@@ -8,17 +7,7 @@ export default async function handler(req, res) {
 
   const { category, difficulty } = req.body;
 
-  const prompt = `Génère une question de culture générale en français sur le thème : "${category}".
-Difficulté : ${difficulty}.
-Retourne UNIQUEMENT un JSON valide (sans markdown, sans explication) avec cette structure exacte :
-{
-  "question": "La question ici ?",
-  "answers": ["Réponse A", "Réponse B", "Réponse C", "Réponse D"],
-  "correct": 0,
-  "explanation": "Explication courte (1 phrase)."
-}
-"correct" est l'index (0-3) de la bonne réponse dans le tableau "answers".
-Varie les sujets, sois précis et intéressant.`;
+  const prompt = `Génère une question de culture générale en français sur le thème : "${category}". Difficulté : ${difficulty}. Retourne UNIQUEMENT un JSON valide (sans markdown, sans explication) avec cette structure exacte : {"question": "La question ici ?", "answers": ["Réponse A", "Réponse B", "Réponse C", "Réponse D"], "correct": 0, "explanation": "Explication courte."}`;
 
   try {
     const response = await fetch('https://api.anthropic.com/v1/messages', {
@@ -29,20 +18,31 @@ Varie les sujets, sois précis et intéressant.`;
         'anthropic-version': '2023-06-01'
       },
       body: JSON.stringify({
-        model: 'claude-sonnet-4-20250514',
+        model: 'claude-opus-4-5',
         max_tokens: 400,
         messages: [{ role: 'user', content: prompt }]
       })
     });
 
     const data = await response.json();
-    let text = data.content.map(b => b.text || '').join('');
+    let text = '';
+    if (data && data.content && Array.isArray(data.content)) {
+      for (const block of data.content) {
+        if (block && block.type === 'text' && block.text) {
+          text += block.text;
+        }
+      }
+    } else {
+      return res.status(500).json({ error: 'Réponse API invalide' });
+    }
+
     text = text.replace(/```json|```/g, '').trim();
     const question = JSON.parse(text);
-
+    while (question.answers.length < 4) question.answers.push('— Sans réponse —');
+    if (typeof question.correct !== 'number') question.correct = 0;
     return res.status(200).json(question);
   } catch (err) {
-    console.error(err);
-    return res.status(500).json({ error: 'Erreur de génération' });
+    console.error('Erreur:', err.message);
+    return res.status(500).json({ error: err.message });
   }
 }
